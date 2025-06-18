@@ -8,7 +8,9 @@ import 'package:news_app/models/news_channels_headlines_model.dart';
 import 'package:news_app/view/categories_screen.dart';
 import 'package:news_app/view/news_detail_screen.dart';
 import 'package:news_app/view_model/news_view_model.dart';
-import 'package:rxdart/rxdart.dart';
+// import 'package:rxdart/rxdart.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:news_app/blocs/news_channel/news_channel_bloc.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   NewsViewModel newsViewModel = NewsViewModel();
 
-  final BehaviorSubject<String> _selectedChannel = BehaviorSubject<String>.seeded('bbc-news');
+  // final BehaviorSubject<String> _selectedChannel = BehaviorSubject<String>.seeded('bbc-news');
 
   // FilterList? selectedMenu;
 
@@ -32,8 +34,14 @@ class _HomeScreenState extends State<HomeScreen> {
   // String name = 'bbc-news';
 
   @override
+  void initState(){
+    super.initState();
+    context.read<NewsChannelBloc>().add(const FetchNewsChannelHeadlines(channelName: 'bbc-news'));
+  }
+
+  @override
   void dispose(){
-    _selectedChannel.close();
+    // _selectedChannel.close();
     super.dispose();
   }
 
@@ -46,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         leading: IconButton(
             onPressed: (){
-              Navigator.push(context,MaterialPageRoute(builder: (context) => CategoriesScreen()));
+              Navigator.push(context,MaterialPageRoute(builder: (context) => const CategoriesScreen()));
             },
             icon: Image.asset('images/category_icon.png',
               height: 30,
@@ -55,18 +63,31 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         title: Text('News', style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w700),),
         actions: [
-          StreamBuilder<String>(
-              stream: _selectedChannel.stream,
-              builder: (context,snapshot){
-                final currentChannelName = snapshot.data ?? 'bbc-news';
+          BlocBuilder<NewsChannelBloc, NewsChannelState>(
+              // stream: _selectedChannel.stream,
+              builder: (context,state){
+                // final currentChannelName = snapshot.data ?? 'bbc-news';
+
+                // String currentChannelName = 'bbc-news';
+                String displayChannelName = 'bbc-news';
 
                 FilterList? currentSelectedMenu;
 
-                if (currentChannelName == 'bbc-news') currentSelectedMenu = FilterList.bbcNews;
-                else if (currentChannelName == 'bloomberg') currentSelectedMenu = FilterList.bloomberg;
-                else if (currentChannelName == 'abc-news') currentSelectedMenu = FilterList.abc;
-                else if (currentChannelName == 'cnn') currentSelectedMenu = FilterList.cnn;
-                else if (currentChannelName == 'al-jazeera-english') currentSelectedMenu = FilterList.alJazeera;
+                // if (currentChannelName == 'bbc-news') currentSelectedMenu = FilterList.bbcNews;
+                // else if (currentChannelName == 'bloomberg') currentSelectedMenu = FilterList.bloomberg;
+                // else if (currentChannelName == 'abc-news') currentSelectedMenu = FilterList.abc;
+                // else if (currentChannelName == 'cnn') currentSelectedMenu = FilterList.cnn;
+                // else if (currentChannelName == 'al-jazeera-english') currentSelectedMenu = FilterList.alJazeera;
+
+                if (state is NewsChannelLoaded){
+                  displayChannelName = state.currentChannel;
+                }
+
+                if (displayChannelName == 'bbc-news') currentSelectedMenu = FilterList.bbcNews;
+                else if (displayChannelName == 'bloomberg') currentSelectedMenu = FilterList.bloomberg;
+                else if (displayChannelName == 'abc-news') currentSelectedMenu = FilterList.abc;
+                else if (displayChannelName == 'cnn') currentSelectedMenu = FilterList.cnn;
+                else if (displayChannelName == 'al-jazeera-english') currentSelectedMenu = FilterList.alJazeera;
 
                 return PopupMenuButton<FilterList>(
                   initialValue: currentSelectedMenu,
@@ -91,7 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     else
                       newChannelName = 'bbc-news';
 
-                    _selectedChannel.sink.add(newChannelName);
+                    // _selectedChannel.sink.add(newChannelName);
+
+                    if(displayChannelName != newChannelName)
+                      context.read<NewsChannelBloc>().add(FetchNewsChannelHeadlines(channelName: newChannelName));
 
                     // Here something should be done
                     // setState(() {
@@ -131,130 +155,136 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(
             height: height * 0.5,
             width: width,
-            child: StreamBuilder<String>(
-              stream: _selectedChannel.stream,
-              initialData: 'bbc-news',
-              builder: (context, channelSnapshot) {
-                if(!channelSnapshot.hasData){
-                  return const Center(child: CircularProgressIndicator());
+            child: BlocBuilder<NewsChannelBloc,NewsChannelState>(
+              // stream: _selectedChannel.stream,
+              // initialData: 'bbc-news',
+              builder: (context, state) {
+                if(state is NewsChannelInitial){
+                  return const Center(
+                      child: SpinKitCircle(
+                        size: 50,
+                        color: Colors.blue,
+                      ));
                 }
-                return FutureBuilder<NewsChannelsHeadlinesModel>(
-                    future: newsViewModel.fetchNewsChannelHeadlinesApi(channelSnapshot.data!),
-                    builder: (BuildContext context, snapshot){
-                      if(snapshot.connectionState == ConnectionState.waiting){
-                        return Center(
-                          child: SpinKitCircle(
-                            size: 50,
-                            color: Colors.blue,
+
+                else if (state is NewsChannelLoading){
+                  return Center(
+                    child: SpinKitCircle(
+                      size: 50,
+                      color: Colors.blue,
+                    ),
+                  );
+                }
+
+                else if (state is NewsChannelLoaded) {
+                  if (state.newsHeadlines.articles == null || state.newsHeadlines.articles!.isEmpty) {
+                    return const Center(child: Text('No articles found for this channel.'));
+                  }
+                  return ListView.builder(
+                      itemCount: state.newsHeadlines.articles!.length,
+                      scrollDirection: Axis.horizontal,
+                      itemBuilder: (context, index){
+
+                        final article = state.newsHeadlines.articles![index];
+                        DateTime dateTime = DateTime.parse(article.publishedAt.toString());
+
+                        return InkWell(
+                          onTap: (){
+                            Navigator.push(context, MaterialPageRoute(builder: (context) =>
+                                NewsDetailScreen(
+                                    newsImage: article.urlToImage.toString(),
+                                    newsTitle: article.title.toString(),
+                                    newsDate: article.publishedAt.toString(),
+                                    author: article.author.toString(),
+                                    description: article.description.toString(),
+                                    content: article.content.toString(),
+                                    source: article.source!.name.toString())
+                            ));
+                          },
+                          child: SizedBox(
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
+                                  height: height * 0.6,
+                                  width: width * 0.9,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: height * 0.02,
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(15),
+                                    child: CachedNetworkImage(
+                                      imageUrl: article.urlToImage.toString(),
+                                      fit: BoxFit.cover,
+                                      placeholder: (context,url) => Container(
+                                        child: spinKit2,
+                                      ),
+                                      errorWidget: (context,url, error) => Icon(Icons.error_outline, color: Colors.red,),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 20,
+                                  child: Card(
+                                    elevation: 5,
+                                    color: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child:  Container(
+                                      alignment: Alignment.bottomCenter,
+                                      padding: EdgeInsets.all(15),
+                                      height: height * 0.22,
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: [
+                                          Container(
+                                            width: width * 0.7,
+                                            child: Text(article.title.toString(),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700),),
+                                          ),
+                                          Spacer(),
+                                          Container(
+                                            width: width * 0.7,
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(article.source!.name!.toString(),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),),
+                                                Text(format.format(dateTime),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w500),),
+                                              ],
+                                            ),
+                                          )
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              ],
+                            ),
                           ),
                         );
                       }
-                      else if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
-                      }
-                      else if (!snapshot.hasData || snapshot.data!.articles == null) {
-                        return const Center(child: Text('No articles found.'));
-                      }
-                      else {
-                        return ListView.builder(
-                            itemCount: snapshot.data!.articles!.length,
-                            scrollDirection: Axis.horizontal,
-                            itemBuilder: (context, index){
+                  );
+                }
 
-                              DateTime dateTime = DateTime.parse(snapshot.data!.articles![index].publishedAt.toString());
+                else if (state is NewsChannelError){
+                  return Center(child: Text(state.message));
+                }
 
-                              return InkWell(
-                                onTap: (){
-                                  Navigator.push(context, MaterialPageRoute(builder: (context) =>
-                                    NewsDetailScreen(
-                                        newsImage: snapshot.data!.articles![index].urlToImage.toString(),
-                                        newsTitle: snapshot.data!.articles![index].title.toString(),
-                                        newsDate: snapshot.data!.articles![index].publishedAt.toString(),
-                                        author: snapshot.data!.articles![index].author.toString(),
-                                        description: snapshot.data!.articles![index].description.toString(),
-                                        content: snapshot.data!.articles![index].content.toString(),
-                                        source: snapshot.data!.articles![index].source!.name.toString())
-                                  ));
-                                },
-                                child: SizedBox(
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Container(
-                                        height: height * 0.6,
-                                        width: width * 0.9,
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: height * 0.02,
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(15),
-                                          child: CachedNetworkImage(
-                                            imageUrl: snapshot.data!.articles![index].urlToImage.toString(),
-                                            fit: BoxFit.cover,
-                                            placeholder: (context,url) => Container(
-                                              child: spinKit2,
-                                            ),
-                                            errorWidget: (context,url, error) => Icon(Icons.error_outline, color: Colors.red,),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        bottom: 20,
-                                        child: Card(
-                                          elevation: 5,
-                                          color: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child:  Container(
-                                            alignment: Alignment.bottomCenter,
-                                            padding: EdgeInsets.all(15),
-                                            height: height * 0.22,
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              crossAxisAlignment: CrossAxisAlignment.center,
-                                              children: [
-                                                Container(
-                                                  width: width * 0.7,
-                                                  child: Text(snapshot.data!.articles![index].title.toString(),
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700),),
-                                                ),
-                                                Spacer(),
-                                                Container(
-                                                  width: width * 0.7,
-                                                  child: Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      Text(snapshot.data!.articles![index].source!.name!.toString(),
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),),
-                                                      Text(format.format(dateTime),
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w500),),
-                                                    ],
-                                                  ),
-                                                )
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }
-                        );
-                      }
-                    }
-                );
+                return const SizedBox.shrink();
               }
             ),
           ),
+
           Padding(
             padding: const EdgeInsets.all(20),
             child: FutureBuilder<CategoriesNewsModel>(
